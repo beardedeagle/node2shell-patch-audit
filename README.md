@@ -471,6 +471,18 @@ Node workers without listeners or malformed data. It does not install Node.
 classifier being tested. CI covers affected/fixed pairs 22.23.3/22.23.4,
 24.22.0/24.22.1 and 26.12.0/26.12.1 on each supported operating system.
 
+`verify_dpkg.py` requires a distro-owned `/usr/bin/node` from the installed
+`nodejs` package. It exercises real dpkg ownership, installed-file checksums,
+native version comparison and the vendor-rule path without build-hash evidence.
+Its deliberately synthetic rules check equal/newer version thresholds, partial
+CVE coverage and exact OS-release matching; they make no claim about actual
+vendor fix availability. The `distro-package` CI job installs `nodejs` on Ubuntu
+and runs this check. The verifier does not execute Node or modify installed files.
+The verifier passed locally in disposable Ubuntu 24.04 x86_64 (emulated) and
+Ubuntu 26.04 arm64 containers. The focused review suite now contains **78 tests**,
+which passed on those containers, macOS arm64 and a Python 3.9 arm64 container;
+the broader release/service matrix below records the earlier 74-test acceptance.
+
 `verify_service.py` is a separate lab acceptance test. It downloads official Node
 24.22.0 and 24.22.1 into temporary directories and runs four HTTP workers on
 ephemeral **127.0.0.1-only** ports. Every worker accepts valid Brotli request bodies;
@@ -509,7 +521,7 @@ installed-file/idle-worker checks for official Node 22.23.3/22.23.4,
 
 | Environment | Architecture | Real-release results |
 | --- | --- | --- |
-| macOS host | arm64 | Affected/fixed pairs returned `AFFECTED` / `PATCHED`. |
+| macOS 27.0.1 (26A434) host | arm64 | Affected/fixed pairs returned `AFFECTED` / `PATCHED`. |
 | Ubuntu 26.04 host | x86_64 | Affected/fixed pairs returned `AFFECTED` / `PATCHED`. |
 | Windows 11 host | x86_64 | File results matched each pair; running-image status remained `UNKNOWN`, as designed. |
 | Debian 13 containers on OrbStack | arm64 and emulated x86_64 | Affected/fixed pairs returned `AFFECTED` / `PATCHED`. |
@@ -521,6 +533,11 @@ those two combinations were not rerun after the ten-CVE expansion.
 Core Ruff checks passed. A negative regression proves the release verifier rejects
 an incorrect classifier verdict and covers uppercase Windows architecture names.
 The research comparison adds source review, not exploit reproduction.
+
+The macOS collector uses `libproc` through `ctypes` with fixed native layouts.
+The tested macOS release is **27.0.1 (26A434), arm64**. Returned-size checks detect
+incomplete information but do not establish ABI compatibility on other versions;
+those versions require their own native acceptance checks.
 
 Live SSH checks against Ubuntu and Windows verified affected/fixed synthetic
 fixtures, including file-only and running-process modes and Ubuntu's noninteractive

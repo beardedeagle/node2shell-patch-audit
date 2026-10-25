@@ -17,6 +17,14 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: python -m unittest discover -q
       - run: python verify_native.py
+  distro-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends nodejs
+      - run: python3 verify_dpkg.py
   service:
     timeout-minutes: 15
     strategy:

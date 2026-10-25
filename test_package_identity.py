@@ -12,6 +12,25 @@ from unittest.mock import patch
 from test_node2shell_audit import audit
 
 
+class OSReleaseTests(unittest.TestCase):
+    def test_version_fields_preserve_spec_punctuation_and_case(self):
+        for field in ('VERSION_ID', 'VERSION_CODENAME'):
+            for quote in ('', "'", '"'):
+                data = 'NAME="Test OS + GNU/Linux"\nID=testos\n' + field + '=' + quote + '1.2+Build~rc1^20261025' + quote + '\n'
+                with self.subTest(field=field, quote=quote), \
+                        patch.object(Path, 'is_file', return_value=True), \
+                        patch.object(Path, 'read_text', return_value=data):
+                    self.assertEqual(audit.os_release(), ('testos', '1.2+Build~rc1^20261025'))
+
+    def test_malformed_identity_fields_cannot_select_fallback_rules(self):
+        for line in ('ID="debian', "ID=debian'", 'ID="debian\'',
+                     'ID="debian+other"', 'VERSION_ID="12', 'VERSION_ID=12/other'):
+            data = 'ID=debian\nVERSION_CODENAME=bookworm\n' + line + '\n'
+            with self.subTest(line=line), patch.object(Path, 'is_file', return_value=True), \
+                    patch.object(Path, 'read_text', return_value=data), self.assertRaises(audit.AuditError):
+                audit.os_release()
+
+
 class PackageAndFileTests(unittest.TestCase):
     def test_alpine_checksum_is_file_specific(self):
         checksum = "Q1" + base64.b64encode(bytes.fromhex("ab" * 20)).decode()
@@ -82,15 +101,18 @@ class PackageAndFileTests(unittest.TestCase):
                 audit.hash_file(str(path))
 
     def test_dpkg_owner_version_and_checksum_are_preserved(self):
-        replies = [subprocess.CompletedProcess([], 0, "nodejs: /usr/sbin/nodejs8.3\n", ""),
-                   subprocess.CompletedProcess([], 0, "nodejs\t24.22.0-0ubuntu0.24.04.13\tinstalled\n", "")]
-        with patch.object(audit, "system_tool", return_value="/usr/bin/dpkg-query"), \
-                patch.object(audit, "command", side_effect=replies), \
-                patch.object(Path, "is_file", return_value=True), \
-                patch.object(Path, "read_text", return_value="a"*32 + "  usr/sbin/nodejs8.3\n"):
-            package = audit.dpkg_metadata("/usr/sbin/nodejs8.3")
-        self.assertEqual(package["version"], "24.22.0-0ubuntu0.24.04.13")
-        self.assertEqual(package["digest"], "a"*32)
+        for path in ('/usr/sbin/nodejs8.3', '/.node/bin/node'):
+            for prefix in ('', './'):
+                replies = [subprocess.CompletedProcess([], 0, 'nodejs: ' + path + '\n', ''),
+                           subprocess.CompletedProcess([], 0, "nodejs\t24.22.0-0ubuntu0.24.04.13\tinstalled\n", "")]
+                with self.subTest(path=path, prefix=prefix), \
+                        patch.object(audit, "system_tool", return_value="/usr/bin/dpkg-query"), \
+                        patch.object(audit, "command", side_effect=replies), \
+                        patch.object(Path, "is_file", return_value=True), \
+                        patch.object(Path, "read_text", return_value='a'*32 + '  ' + prefix + path[1:] + '\n'):
+                    package = audit.dpkg_metadata(path)
+                self.assertEqual(package["version"], "24.22.0-0ubuntu0.24.04.13")
+                self.assertEqual(package["digest"], "a"*32)
 
     def test_dpkg_does_not_accept_other_file_from_pattern_match(self):
         with patch.object(audit, "system_tool", return_value="/usr/bin/dpkg-query"), \

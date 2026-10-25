@@ -333,15 +333,19 @@ def path_key(value):
 
 
 def os_release():
-    # Parse the two simple fields without sourcing a shell file.
+    # Only machine identifiers are needed; display fields have different syntax.
     values = {}
     path = Path("/etc/os-release")
     if not path.is_file():
         path = Path("/usr/lib/os-release")
     for line in path.read_text().splitlines():
-        match = re.fullmatch(r'(ID|VERSION_ID|VERSION_CODENAME)=["\']?([A-Za-z0-9._-]+)["\']?', line)
-        if match:
-            values[match[1]] = match[2]
+        key, _, value = line.partition("=")
+        if key not in ("ID", "VERSION_ID", "VERSION_CODENAME"):
+            continue
+        match = re.fullmatch(r"""(["']?)([A-Za-z0-9._+~^-]+)\1""", value)
+        require(match is not None and (key != "ID" or re.fullmatch(r"[a-z0-9._-]+", match[2])),
+                "Invalid os-release field: " + key)
+        values[key] = match[2]
     require("ID" in values, "Cannot determine OS release")
     return values["ID"], values.get("VERSION_ID", values.get("VERSION_CODENAME", "rolling"))
 
@@ -620,7 +624,7 @@ def dpkg_metadata(path):
             continue
         for line in manifest.read_text().splitlines():
             parts = line.split(None, 1)
-            if len(parts) == 2 and "/" + parts[1].lstrip("./") == path:
+            if len(parts) == 2 and "/" + parts[1].removeprefix("./") == path:
                 require(re.fullmatch(r"[0-9a-f]{32}", parts[0]), "Invalid package checksum")
                 checksum = parts[0]
     require(checksum is not None, "Package has no checksum for the running file")
@@ -1010,6 +1014,7 @@ def run_remote(argv, mode, target, inventory, evidence, files=False, draft=False
     Returns:
         dict: Validated target report, or an UNKNOWN transport-failure report.
     """
+    validate_config(inventory, evidence)
     token, program = remote_program(inventory, evidence, files, draft)
     run = None
     try:
@@ -1547,7 +1552,6 @@ def main(argv=None):
                 "Probe mode cannot consume inventory/evidence")
         inventory = load_json(args.inventory) if args.inventory else None
         evidence = load_json(args.evidence) if args.evidence else {"schema": 1}
-        validate_config(inventory, evidence)
         if args.ssh:
             report = audit_ssh(args.ssh, args.sudo, inventory, evidence, args.files,
                                args.remote_os, args.remote_python, args.draft_inventory)

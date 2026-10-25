@@ -61,7 +61,8 @@ class VersionsAndEvidence(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "node"
             path.write_bytes(b"fixture")
-            with patch.object(audit, "command", side_effect=AssertionError("must not execute")):
+            with patch.object(audit, "command", side_effect=AssertionError("must not execute")), \
+                    patch.object(audit.subprocess, "run", side_effect=AssertionError("must not execute directly")):
                 report = audit.audit_local(inventory(str(path)), build(), files=True)
         self.assertEqual(report["verdict"], "PATCHED")
         self.assertEqual(report["assessment_scope"], "installed-files-only")
@@ -366,6 +367,22 @@ class IdentityAndDiscovery(unittest.TestCase):
 
 
 class TransportAndCLI(unittest.TestCase):
+    def test_invalid_configuration_is_rejected_before_transport(self):
+        with patch.object(audit, 'command') as run, self.assertRaises(audit.AuditError):
+            audit.run_remote(['ssh'], 'ssh', 'host', None, {'schema': 99})
+        run.assert_not_called()
+
+    def test_transferred_source_rejects_unconfirmed_inventory(self):
+        config = inventory()
+        config['coverage_confirmed'] = False
+        token, program = audit.remote_program(config, EMPTY)
+        result = subprocess.run([sys.executable, '-'], input=program, text=True, capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertTrue(audit.valid_remote_result(report, token, result.returncode))
+        self.assertEqual(report['runtimes'], [])
+        self.assertEqual(report['diagnostics'][0]['code'], 'INVENTORY_UNCONFIRMED')
+
     def test_transferred_source_fingerprint_is_verified(self):
         result = audit.finish([record()], [])
         result["token"] = "nonce"
