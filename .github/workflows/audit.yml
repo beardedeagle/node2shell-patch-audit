@@ -1,0 +1,51 @@
+name: Audit checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  regression:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.9', '3.14']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m unittest discover -q
+      - run: python verify_native.py
+  service:
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: python verify_service.py
+  real-node:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node:
+          - {version: '22.23.3', expect: AFFECTED}
+          - {version: '22.23.4', expect: PATCHED}
+          - {version: '24.22.0', expect: AFFECTED}
+          - {version: '24.22.1', expect: PATCHED}
+          - {version: '26.12.0', expect: AFFECTED}
+          - {version: '26.12.1', expect: PATCHED}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: python verify_release.py --version ${{ matrix.node.version }} --expect ${{ matrix.node.expect }}

@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "scope": "REVIEW: all Node deployments in this host/container namespace",
+  "coverage_confirmed": false,
+  "runtimes": [
+    {
+      "label": "API service Node runtime",
+      "kind": "node",
+      "path": "/usr/local/bin/node",
+      "exposure": {
+        "CVE-2026-111497": {
+          "reachability": "unknown",
+          "source": "REVIEW request decompression, fetched responses, uploads and background jobs"
+        }
+      }
+    }
+  ]
+}

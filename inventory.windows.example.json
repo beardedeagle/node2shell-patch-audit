@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "scope": "REVIEW: all Node deployments on this Windows host",
+  "coverage_confirmed": false,
+  "runtimes": [
+    {
+      "label": "Node service",
+      "kind": "node",
+      "path": "C:\\Program Files\\nodejs\\node.exe"
+    }
+  ]
+}
