@@ -84,17 +84,13 @@ def start_service(binary, script, stack):
     return service
 
 
-def request(service):
-    connection = http.client.HTTPConnection('127.0.0.1', service['port'], timeout=5)
-    try:
-        connection.request('POST', '/decode', body=service['payload'],
-                           headers={'Content-Encoding': 'br', 'Content-Type': 'application/octet-stream'})
-        response = connection.getresponse()
-        data = json.loads(response.read(2048))
-        assert response.status == 200 and data == {
-            'pid': service['pid'], 'text': 'node2shell benign service acceptance'}, data
-    finally:
-        connection.close()
+def request(service, connection):
+    connection.request('POST', '/decode', body=service['payload'],
+                       headers={'Content-Encoding': 'br', 'Content-Type': 'application/octet-stream'})
+    response = connection.getresponse()
+    data = json.loads(response.read(2048))
+    assert response.status == 200 and data == {
+        'pid': service['pid'], 'text': 'node2shell benign service acceptance'}, data
 
 
 def check_services(root, services, proof, statuses, phase, stale=(), missing=False):
@@ -120,24 +116,29 @@ def check_services(root, services, proof, statuses, phase, stale=(), missing=Fal
             deadline = time.monotonic() + 120
             while not stop.is_set() and time.monotonic() < deadline:
                 for service in services:
-                    request(service)
+                    request(service, connections[service['pid']])
                     counts[service['pid']] += 1
                 stop.wait(0.01)
         except Exception as exc:
             failures.append(exc)
 
-    # Establish reachability before starting concurrent traffic and inspection.
-    for service in services:
-        request(service)
-    worker = threading.Thread(target=traffic)
-    worker.start()
-    try:
-        run = subprocess.run([sys.executable, str(Path(audit.__file__).resolve()),
-                              '--inventory', str(inv), '--evidence', str(evidence), '--json'],
-                             capture_output=True, text=True, timeout=120)
-    finally:
-        stop.set()
-        worker.join(timeout=25)
+    with ExitStack() as stack:
+        # Reuse sockets so sustained traffic cannot exhaust Windows ephemeral ports.
+        connections = {}
+        for service in services:
+            connection = http.client.HTTPConnection('127.0.0.1', service['port'], timeout=5)
+            stack.callback(connection.close)
+            connections[service['pid']] = connection
+            request(service, connection)
+        worker = threading.Thread(target=traffic)
+        worker.start()
+        try:
+            run = subprocess.run([sys.executable, str(Path(audit.__file__).resolve()),
+                                  '--inventory', str(inv), '--evidence', str(evidence), '--json'],
+                                 capture_output=True, text=True, timeout=120)
+        finally:
+            stop.set()
+            worker.join(timeout=25)
     assert not worker.is_alive() and not failures, failures
     assert all(counts.values()), counts
     report = json.loads(run.stdout)['reports'][0]
